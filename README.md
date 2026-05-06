@@ -2,7 +2,14 @@
 
 Starter repo cho bài lab **Multi-Agent Systems**: xây dựng hệ thống nghiên cứu gồm **Supervisor + Researcher + Analyst + Writer** và benchmark với single-agent baseline.
 
-> Repo này gồm **implementation tham chiếu** cho baseline (single LLM call), multi-agent loop (Supervisor + 3 worker), `LLMClient` (OpenAI-compatible), và `SearchClient` (Tavily hoặc mock). Phần mở rộng (Critic, LangGraph compile, LangSmith spans, benchmark nâng cao) vẫn để `TODO(student)` ở vài file.
+> Repo này gồm **implementation tham chiếu** cho baseline (single LLM call), multi-agent loop (Supervisor + 3 worker), `LLMClient` (OpenAI-compatible), và `SearchClient` (Tavily hoặc mock). Phần mở rộng (Critic, LangGraph compile, benchmark nâng cao) vẫn để `TODO(student)` ở vài file.
+
+## What you can do with this repo
+
+- **Run a single-agent baseline**: 1 LLM call, prints answer + latency/tokens.
+- **Run a multi-agent workflow**: Supervisor routes through Researcher → Analyst → Writer, returns a JSON `ResearchState`.
+- **Trace LLM calls in LangSmith**: set `LANGSMITH_API_KEY` and runs will appear under your `LANGSMITH_PROJECT`.
+- **Benchmark** baseline vs multi-agent: use `scripts/run_benchmark.py` + `reports/benchmark_report.md`.
 
 ## Learning outcomes
 
@@ -46,11 +53,20 @@ Trace + Benchmark Report
 ├── tests/                   # Unit tests
 ├── notebooks/               # Optional notebook entrypoint
 ├── scripts/                 # Helper scripts
+├── reports/                 # Deliverables (benchmark report + trace evidence)
 ├── .env.example             # Environment variables template
 ├── pyproject.toml           # Python project config
 ├── Dockerfile               # Containerized dev/runtime
 └── Makefile                 # Common commands
 ```
+
+## Key concepts (how it works)
+
+- **State passing**: Every agent reads/writes a shared `ResearchState` (`core/state.py`).
+- **Supervisor routing**: `SupervisorAgent` sets `state.next_route` to one of: `researcher`, `analyst`, `writer`, `done`.
+- **Guardrails**: `MultiAgentWorkflow` enforces `MAX_ITERATIONS` and `TIMEOUT_SECONDS`, records failures to `state.errors`.
+- **Search**: `SearchClient` uses Tavily if `TAVILY_API_KEY` is set, otherwise a deterministic mock (offline).
+- **Tracing**: `LLMClient` wraps the OpenAI client via LangSmith `wrap_openai` when `LANGSMITH_API_KEY` is present.
 
 ## Quickstart
 
@@ -84,6 +100,14 @@ Mở `.env`:
 - **Local (Ollama, OpenAI-compatible)**: `OPENAI_BASE_URL` (ví dụ `http://localhost:11434/v1`), `OPENAI_MODEL` (tên model Ollama). `OPENAI_API_KEY` có thể để trống.
 - **Search thật (tuỳ chọn)**: `TAVILY_API_KEY`. Nếu không có, `SearchClient` dùng **mock sources** để lab vẫn chạy offline.
 
+Ví dụ `.env` cho Ollama:
+
+```env
+OPENAI_BASE_URL=http://localhost:11434/v1
+OPENAI_MODEL=llama3.1:8b
+OPENAI_API_KEY=
+```
+
 ### 3. Guardrails (env)
 
 Các biến sau được đọc trong `core/config.py` và áp dụng trong `LLMClient` / `graph/workflow.py`:
@@ -95,7 +119,14 @@ Các biến sau được đọc trong `core/config.py` và áp dụng trong `LLM
 | `LLM_MAX_RETRIES` | Số lần retry (tenacity) khi LLM gặp rate limit / timeout / lỗi kết nối. |
 | `MIN_FINAL_ANSWER_CHARS` | Sau bước Writer, nếu `final_answer` quá ngắn sẽ **retry Writer một lần** (validation tối thiểu). |
 
-**LangSmith:** đặt `LANGSMITH_API_KEY` và `LANGSMITH_PROJECT` trong `.env`. Ứng dụng gọi `apply_langsmith_runtime_env` khi khởi động CLI và bọc `OpenAI` bằng `langsmith.wrappers.wrap_openai`, nên mỗi `chat.completions` xuất hiện trong project LangSmith (sau vài giây). Kiểm tra tại https://smith.langchain.com .
+**LangSmith:** đặt `LANGSMITH_API_KEY` và `LANGSMITH_PROJECT` trong `.env`. Ứng dụng gọi `apply_langsmith_runtime_env` khi khởi động CLI và bọc `OpenAI` bằng `langsmith.wrappers.wrap_openai`, nên mỗi `chat.completions` xuất hiện trong project (sau vài giây). Kiểm tra tại `https://smith.langchain.com`.
+
+**Benchmark cost (optional):** nếu bạn muốn ước lượng USD trong benchmark table, set:
+
+```env
+BENCHMARK_USD_PER_1K_INPUT_TOKENS=0.00015
+BENCHMARK_USD_PER_1K_OUTPUT_TOKENS=0.00060
+```
 
 ### 4. Smoke test
 
@@ -123,6 +154,24 @@ python -m multi_agent_research_lab.cli multi-agent --query "Research GraphRAG st
 ```
 
 Output là JSON `ResearchState` (trace, route_history, notes, errors nếu có).
+
+## Benchmark & deliverables
+
+### 1) Run benchmark script
+
+```powershell
+python scripts\run_benchmark.py
+```
+
+Outputs:
+
+- `reports/benchmark_report_table.md`: table of latency/cost/quality/notes
+- `reports/benchmark_report.md`: template to paste links + summarize results
+
+### 2) Evidence for tracing
+
+- Put screenshots under `reports/langsmith_screenshots/` (already supported), or
+- Paste LangSmith run links into `reports/benchmark_report.md`.
 
 ## Milestones trong 2 giờ lab
 
@@ -166,6 +215,12 @@ Học viên nộp:
 2. Screenshot trace hoặc link trace.
 3. `reports/benchmark_report.md` so sánh single vs multi-agent.
 4. Một đoạn giải thích failure mode và cách fix.
+
+## Troubleshooting
+
+- **PowerShell multi-line commands fail**: don't use Bash `\` line continuation. Use one-line commands or PowerShell backtick.
+- **Sources are `example.invalid`**: `TAVILY_API_KEY` not set, so search runs in mock/offline mode.
+- **No LangSmith traces**: check `LANGSMITH_API_KEY` and `LANGSMITH_PROJECT`, then wait a few seconds and refresh the project page.
 
 ## References
 
